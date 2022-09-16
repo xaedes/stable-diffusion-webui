@@ -100,6 +100,10 @@ from ldm.util import instantiate_from_config
 
 import collections
 
+import pixellib
+from pixellib.torchbackend.instance import instanceSegmentation
+
+
 # add global options to models
 def patch_conv(**patch):
     cls = torch.nn.Conv2d
@@ -479,8 +483,26 @@ def try_loading_monocular_depth_estimation():
             print("Error loading monocular_depth_estimation:", file=sys.stderr)
             print(traceback.format_exc(), file=sys.stderr)        
     else:
-        print(f"monocular_depth_estimation not found at path, please make sure you have cloned the LDSR repo to {Monocular_Depth_Filter_dir}")
+        print(f"monocular_depth_estimation not found at path, please make sure you have cloned the LDSR repo to {monocular_depth_estimation_dir}")
 try_loading_monocular_depth_estimation()
+
+image_segmentation = None
+image_segmentation_model_path = "src/pixellib/mask_rcnn_coco.h5"
+def try_loading_image_segmentation():
+    global image_segmentation
+    if os.path.exists(image_segmentation_model_path):
+        try:
+            image_segmentation = instanceSegmentation()
+            image_segmentation.load_model(image_segmentation_model_path)
+            print('image_segmentation loaded')
+        except Exception:
+            import traceback
+            print("Error loading image_segmentation:", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)        
+    else:
+        print(f"image_segmentation not found at path, please make sure you have cloned the LDSR repo to {image_segmentation_model_path}")
+try_loading_image_segmentation()
+
 
 print('Successfully loaded model...')
 
@@ -2623,6 +2645,16 @@ def scn2img(prompt: str, toggles: List[int], seed: Union[int, str, None], fp = N
         def render_object(seeds, obj):
             # log_trace(f"render_object({str(obj)})")
             def result(img):
+                if "instance_segmentation" in obj:
+                    img_rgb = np.asarray(img.convert("RGB"))
+                    img_a = img.getchannel("A")
+                    r, img_rgb = image_segmentation.segmentFrame(
+                        frame = img_rgb,  
+                        show_bboxes = True
+                    )
+                    img = Image.fromarray(img_rgb)
+                    img.putalpha(img_a)
+
                 if output_intermediates and img is not None:
                     img_id = id(img)
                     if img_id not in output_image_set:
